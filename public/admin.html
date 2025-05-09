@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chatContainer {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px;
+        }
+        #chatHistory {
+            width: 60%;
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 500px;
+            overflow-y: scroll;
+        }
+        #adminControls {
+            width: 35%;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+        #messageInput {
+            width: 100%;
+        }
+        .message {
+            margin-bottom: 10px;
+        }
+        .user {
+            font-weight: bold;
+        }
+        .admin {
+            color: blue;
+        }
+        img {
+            max-width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chatContainer">
+        <div id="chatHistory"></div>
+        <div id="adminControls">
+            <h3>Admin Controls</h3>
+            <div>
+                <label for="userSelect">Select User:</label>
+                <select id="userSelect">
+                    <option value="">-- Select User --</option>
+                </select>
+            </div>
+            <div>
+                <textarea id="messageInput" placeholder="Type your message here..."></textarea>
+                <input type="file" id="imageInput" accept="image/jpeg"/>
+                <button id="sendMessageBtn">Send Message</button>
+            </div>
+            <div>
+                <h4>Online Users:</h4>
+                <ul id="onlineUsersList"></ul>
+            </div>
+        </div>
+    </div>
+    <script>
+        const socket = io('/admin');
+
+        // Fetch unresolved chats and online users on page load
+        window.onload = function() {
+            socket.emit('getUnresolvedChats');
+            setInterval(() => {
+                socket.emit('getOnlineUsers');
+            }, 10000);
+        };
+
+        // Handle unresolved chats response
+        socket.on('unresolvedChats', (chats) => {
+            const chatHistory = document.getElementById('chatHistory');
+            chatHistory.innerHTML = ''; // Clear existing chats
+
+            chats.forEach(chat => {
+                const chatMessage = document.createElement('div');
+                chatMessage.classList.add('message');
+                chatMessage.innerHTML = `<div class="${chat.sender}">${chat.sender === 'admin' ? 'Admin' : 'User'} ${chat.userId}:</div>
+                                         <div>${chat.text}</div>
+                                         ${chat.imageUrl ? `<img src="${chat.imageUrl}" alt="User Image"/>` : ''}`;
+                chatHistory.appendChild(chatMessage);
+            });
+
+            chatHistory.scrollTop = chatHistory.scrollHeight; // Scroll to bottom
+        });
+
+        // Handle user dropdown population
+        socket.on('updateUserDropdown', (users) => {
+            const userSelect = document.getElementById('userSelect');
+            userSelect.innerHTML = '<option value="">-- Select User --</option>'; // Clear existing options
+
+            users.forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.userId;
+                option.textContent = `User ${user.userId}`;
+                userSelect.appendChild(option);
+            });
+        });
+
+        // Handle online users update
+        socket.on('updateOnlineUsers', (onlineUsers) => {
+            const onlineUsersList = document.getElementById('onlineUsersList');
+            onlineUsersList.innerHTML = ''; // Clear existing list
+
+            onlineUsers.forEach(userId => {
+                const listItem = document.createElement('li');
+                listItem.textContent = `User ${userId}`;
+                onlineUsersList.appendChild(listItem);
+            });
+
+            // Update user dropdown to reflect online users
+            const userSelect = document.getElementById('userSelect');
+            const options = Array.from(userSelect.options).map(option => option.value);
+            onlineUsers.forEach(userId => {
+                if (!options.includes(userId)) {
+                    const option = document.createElement('option');
+                    option.value = userId;
+                    option.textContent = `User ${userId}`;
+                    userSelect.appendChild(option);
+                }
+            });
+        });
+
+        // Handle send message button click
+        document.getElementById('sendMessageBtn').onclick = function() {
+            const userId = document.getElementById('userSelect').value;
+            const text = document.getElementById('messageInput').value;
+            const imageInput = document.getElementById('imageInput');
+            let image = '';
+
+            if (imageInput.files.length > 0) {
+                const file = imageInput.files[0];
+                const reader = new FileReader();
+                reader.onloadend = function() {
+                    image = reader.result;
+                    sendMessage(userId, text, image);
+                };
+                reader.readAsDataURL(file);
+            } else {
+                sendMessage(userId, text, image);
+            }
+        };
+
+        function sendMessage(userId, text, image) {
+            if (userId) {
+                socket.emit('sendResponse', { userId, text, image });
+                document.getElementById('messageInput').value = ''; // Clear the input
+                document.getElementById('imageInput').value = ''; // Clear the image input
+            }
+        }
+
+        // Handle when admin selects a user
+        document.getElementById('userSelect').onchange = function() {
+            const userId = this.value;
+            if (userId) {
+                socket.emit('selectUserForChat', userId);
+            }
+        };
+
+        // Handle receiving messages
+        socket.on('messageFromServer', (message) => {
+            const chatHistory = document.getElementById('chatHistory');
+            const chatMessage = document.createElement('div');
+            chatMessage.classList.add('message');
+            chatMessage.innerHTML = `<div class="${message.sender}">${message.sender === 'admin' ? 'Admin' : 'User'} ${message.userId}:</div>
+                                     <div>${message.text}</div>
+                                     ${message.imageUrl ? `<img src="${message.imageUrl}" alt="Message Image"/>` : ''}`;
+            chatHistory.appendChild(chatMessage);
+            chatHistory.scrollTop = chatHistory.scrollHeight; // Scroll to bottom
+        });
+    </script>
+</body>
+</html>

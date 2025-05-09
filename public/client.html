@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Application</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chat {
+            display: flex;
+            flex-direction: column;
+            height: 80vh;
+            border: 1px solid #ccc;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .message {
+            margin-bottom: 10px;
+        }
+        #input {
+            display: flex;
+            margin-top: 10px;
+        }
+        #input input[type="text"] {
+            flex: 1;
+            padding: 10px;
+        }
+        #input input[type="file"] {
+            margin-left: 10px;
+        }
+        #input button {
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="auth">
+        <input type="text" id="userId" placeholder="Enter your User ID">
+        <input type="text" id="token" placeholder="Enter your JWT token (optional)">
+        <button id="login">Login</button>
+    </div>
+    <div id="chat-container" style="display: none;">
+        <div id="chat">
+            <div id="messages"></div>
+            <div id="input">
+                <input type="text" id="message" placeholder="Type a message">
+                <input type="file" id="image">
+                <button id="send">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('message');
+        const imageInput = document.getElementById('image');
+        const sendButton = document.getElementById('send');
+        const chatContainer = document.getElementById('chat-container');
+        const authDiv = document.getElementById('auth');
+        const loginButton = document.getElementById('login');
+        const tokenInput = document.getElementById('token');
+        const userIdInput = document.getElementById('userId');
+
+        let userId;
+
+        // Handle login
+        loginButton.addEventListener('click', () => {
+            userId = userIdInput.value;
+            const token = tokenInput.value;
+            
+            if (userId) {
+                // Optionally include token in the connection query
+                if (token) {
+                    socket.io.opts.query = { token };
+                }
+
+                // Join the room
+                socket.emit('join_room', userId);
+                authDiv.style.display = 'none';
+                chatContainer.style.display = 'block';
+            } else {
+                alert('User ID is required');
+            }
+        });
+
+        // Handle receiving messages
+        socket.on('recieve-all-message', (messages) => {
+            messagesDiv.innerHTML = '';
+            messages.forEach(message => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'message';
+                msgDiv.innerHTML = `<strong>${message.sender}:</strong> ${message.text}<br>${message.imageUrl ? `<img src="${message.imageUrl}" width="100">` : ''}`;
+                messagesDiv.appendChild(msgDiv);
+            });
+        });
+
+        socket.on('messageFromServer', (message) => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            msgDiv.innerHTML = `<strong>${message.sender}:</strong> ${message.text}<br>${message.imageUrl ? `<img src="${message.imageUrl}" width="100">` : ''}`;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to the bottom
+        });
+
+        // Handle sending messages
+        sendButton.addEventListener('click', () => {
+            const message = messageInput.value;
+            const image = imageInput.files[0];
+
+            if (message || image) {
+                const reader = new FileReader();
+                if (image) {
+                    reader.onloadend = () => {
+                        const base64Image = reader.result.replace(/^data:image\/(png|jpg|jpeg);base64,/, "");
+                        socket.emit('send_message', { userId, text: message, image: base64Image });
+                    };
+                    reader.readAsDataURL(image);
+                } else {
+                    socket.emit('send_message', { userId, text: message, image: '' });
+                }
+
+                messageInput.value = '';
+                imageInput.value = '';
+            }
+        });
+
+        // Handle disconnection
+        window.addEventListener('beforeunload', () => {
+            socket.disconnect();
+        });
+    </script>
+</body>
+</html>
